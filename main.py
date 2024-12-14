@@ -1,5 +1,7 @@
 import os
 import argparse
+import sys
+import logging 
 
 import requests
 import urllib3
@@ -12,7 +14,8 @@ BASE_URL = "https://tululu.org"
 current_path = os.path.dirname(__file__)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
+logging.BasicConfig(level=logging.ERROR, 
+                    format='%{asctime}s - %{levelname}s - %{message}s')
 
 def book_url_returner(book_id):
     """Возвращает URL-адрес книги по ее ID."""
@@ -139,8 +142,11 @@ def main():
                 print("-" * 40)
             else:
                 pass
-        except requests.exceptions.HTTPError:
-            pass
+        except requests.exceptions.HTTPError as e:
+            logging.error(f"HTTPError для книги ID {book_id}: {e}")
+            print(
+                f"Ошибка при загрузке книги ID {book_id}. Проверьте логи для деталей.", file=sys.stderr)
+
 
 
 if __name__ == "__main__":
