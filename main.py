@@ -1,7 +1,8 @@
 import os
 import argparse
 import sys
-import logging 
+import logging
+import time
 
 import requests
 import urllib3
@@ -14,103 +15,83 @@ BASE_URL = "https://tululu.org"
 current_path = os.path.dirname(__file__)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-logging.BasicConfig(level=logging.ERROR, 
-                    format='%{asctime}s - %{levelname}s - %{message}s')
+logging.basicConfig(level=logging.ERROR,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
-def book_url_returner(book_id):
-    """Возвращает URL-адрес книги по ее ID."""
-    return f"{BASE_URL}/b{book_id}/"
+
+def retry_request(url, retries=5, delay=5, **kwargs):
+    """Отправляет запрос по указанному url в связи ошибок соединения"""
+    for attempt in range(retries+1):
+        try:
+            response = requests.get(url, verify=False, **kwargs)
+            response.raise_for_status()
+            return response
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            logging.error(f"There's an error: {e}")
+            print(f"Попытка {attempt} из {retries}: Ошибка подключения - {e}")
+            if attempt == retries:
+                raise
+            time.sleep(delay)
 
 
 def check_for_redirect(response):
     """Проверяет наличие редиректа в ответе."""
     if response.history:
         raise requests.exceptions.HTTPError("Перенаправление обнаружено")
-    return True
 
 
-def get_image_url(book_id):
-    """Находит URL-адрес изображения книги по ее ID."""
-    try:
-        response = requests.get(book_url_returner(book_id), verify=False)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-        img_tag = soup.select_one("div.bookimage img")
-        if img_tag:
-            return urljoin(BASE_URL, img_tag["src"])
-    except requests.exceptions.RequestException:
-        return
+def parse_book_page(response):
+    """Парсит страницу книги и возвращает ее данные."""
+    soup = BeautifulSoup(response.text, "html.parser")
+    comments_divs = soup.find_all("div", class_="texts")
+
+    base_book_info = {
+        "title": soup.find("h1").text.split("::")[0].strip(),
+        "author": soup.find("h1").find("a").text.strip(),
+        "genre": soup.find("span", class_="d_book").find("a").text.strip(),
+        "comments": [div.find("span").text.strip() for div in comments_divs],
+        "image_url": urljoin(BASE_URL, soup.select_one("div.bookimage img")["src"]),
+    }
+    return base_book_info
 
 
-def get_book_title(book_id):
-    """Находит название книги по ее ID."""
-    try:
-        response = requests.get(book_url_returner(book_id), verify=False)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-        title_tag = soup.select_one("h1")
-        return title_tag.text.split("::")[0].strip()
-    except requests.exceptions.RequestException:
-        return
-
-
-def download_file(url, filename, folder="book/"):
+def download_file(url, filepath):
     """Скачивает файл и обрабатывает возможные ошибки."""
-    os.makedirs(os.path.join(current_path, folder), exist_ok=True)
-    filepath = os.path.join(current_path, folder, sanitize_filename(filename))
 
-    response = requests.get(url, verify=False, stream=True)
-    response.raise_for_status()
+    response = retry_request(url, stream=True)
     with open(filepath, "wb") as f:
         for chunk in response.iter_content(chunk_size=8192):
             f.write(chunk)
     return filepath
 
 
-def download_book(book_id):
+def download_book(book_id, title):
     """Скачивает книгу по ее ID."""
-    title = get_book_title(book_id)
-    url = f"{BASE_URL}/txt.php?id={book_id}"
-    response = requests.get(url, verify=False, allow_redirects=True)
-    response.raise_for_status()
-    filename = f"{book_id}.{title}"
 
-    if check_for_redirect(response):
-        download_file(url, f"{filename}.txt")
+    params = {
+        'id': book_id
+    }
+    url = f"{BASE_URL}/txt.php"
 
+    filename = sanitize_filename(f"{book_id}.{title}.txt")
+    filepath = os.path.join(current_path, "book", filename)
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    response = retry_request(url, params=params, allow_redirects=True)
+    check_for_redirect(response)
+    download_file(url, filepath)
 
-def download_image(book_id):
-    """Скачивает изображение книги по ее ID."""
-    url = get_image_url(book_id)
-    if not url:
-        print(f"Изображение для книги с ID {book_id} не найдено.")
-        return
-    response = requests.get(url, verify=False, allow_redirects=True)
-    if check_for_redirect(response):
-        filename = os.path.basename(urlsplit(url).path)
-        filename = unquote(filename)
-        download_file(url, filename, folder="images/")
+    return filepath
 
 
-def parse_book_page(book_id):
-    """Парсит страницу книги и возвращает ее данные."""
-    try:
-        response = requests.get(book_url_returner(book_id))
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-        comments_divs = soup.find_all("div", class_="texts")
+def download_image(image_url):
+    """Скачивает изображение книги."""
 
-        book_data = {}
-        book_data["title"] = soup.find("h1").text.split("::")[0].strip()
-        book_data["author"] = soup.find("h1").find("a").text.strip()
-        book_data["genre"] = soup.find(
-            "span", class_="d_book").find("a").text.strip()
-        book_data["comments"] = [
-            div.find("span").text.strip() for div in comments_divs]
+    filename = unquote(os.path.basename(urlsplit(image_url).path))
+    filepath = os.path.join(current_path, "images", filename)
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
-        return book_data
-    except requests.exceptions.RequestException as e:
-        return {}
+    download_file(image_url, filepath)
+    return filepath
 
 
 def main():
@@ -124,29 +105,33 @@ def main():
 
     for book_id in range(args.start_id, args.end_id + 1):
         try:
-            url = f"{BASE_URL}/txt.php?id={book_id}"
-            response = requests.get(url, verify=False, allow_redirects=True)
+            url = f"{BASE_URL}/b{book_id}/"
+            response = retry_request(url, allow_redirects=True)
             response.raise_for_status()
-            if check_for_redirect(response):
-                download_book(book_id)
-                download_image(book_id)
-                book_data = parse_book_page(book_id)
+            check_for_redirect(response)
 
-                if book_data:
-                    print(f"Название: {book_data['title']}")
-                    print(f"Автор: {book_data['author']}")
-                    print(f"Жанр: {book_data['genre']}")
-                    print("Комментарии:")
-                    for comment in book_data["comments"]:
-                        print(f"- {comment}")
-                print("-" * 40)
-            else:
-                pass
+            base_book_info = parse_book_page(response)
+
+            print(f"Название: {base_book_info['title']}")
+            print(f"Автор: {base_book_info['author']}")
+            print(f"Жанр: {base_book_info['genre']}")
+            print(f"Жанр: {base_book_info['image_url']}")
+
+            print("Комментарии:")
+            for comment in base_book_info["comments"]:
+                print(f"- {comment}")
+
+            download_book(book_id, base_book_info["title"])
+            download_image(base_book_info['image_url'])
+
         except requests.exceptions.HTTPError as e:
             logging.error(f"HTTPError для книги ID {book_id}: {e}")
             print(
                 f"Ошибка при загрузке книги ID {book_id}. Проверьте логи для деталей.", file=sys.stderr)
-
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Ошибка загрузки для книги ID {book_id}: {e}")
+            print(
+                f"Ошибка при загрузке книги ID {book_id}. Проверьте логи для деталей.", file=sys.stderr)
 
 
 if __name__ == "__main__":
