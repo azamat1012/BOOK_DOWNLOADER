@@ -19,8 +19,9 @@ logging.basicConfig(level=logging.ERROR,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-def retry_request(url, retries=5, delay=5, **kwargs):
+def retry_request(url, retries=5, delay=5,  max_delay= 300,  **kwargs):
     """Отправляет запрос по указанному url в связи ошибок соединения"""
+    freeze_time_factor = 2 
     for attempt in range(retries+1):
         try:
             response = requests.get(url, verify=False, **kwargs)
@@ -31,7 +32,10 @@ def retry_request(url, retries=5, delay=5, **kwargs):
             print(f"Попытка {attempt} из {retries}: Ошибка подключения - {e}")
             if attempt == retries:
                 raise
-            time.sleep(delay)
+              
+            sleep_time = min(max_delay, delay*(attempt**freeze_time_factor))
+            time.sleep(sleep_time)
+
 
 
 def check_for_redirect(response):
