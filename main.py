@@ -54,7 +54,7 @@ def parse_book_page(response):
         "author": soup.find("h1").find("a").text.strip(),
         "genre": soup.find("span", class_="d_book").find("a").text.strip(),
         "comments": [div.find("span").text.strip() for div in comments_divs],
-        "image_url": urljoin(BASE_URL, soup.select_one("div.bookimage img")["src"]),
+        "image_url": urljoin(response.url, soup.select_one("div.bookimage img")["src"]),
     }
     return book_data
 
