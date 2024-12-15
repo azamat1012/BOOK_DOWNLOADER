@@ -49,14 +49,14 @@ def parse_book_page(response):
     soup = BeautifulSoup(response.text, "html.parser")
     comments_divs = soup.find_all("div", class_="texts")
 
-    base_book_info = {
+    book_data = {
         "title": soup.find("h1").text.split("::")[0].strip(),
         "author": soup.find("h1").find("a").text.strip(),
         "genre": soup.find("span", class_="d_book").find("a").text.strip(),
         "comments": [div.find("span").text.strip() for div in comments_divs],
         "image_url": urljoin(BASE_URL, soup.select_one("div.bookimage img")["src"]),
     }
-    return base_book_info
+    return book_data
 
 
 def download_file(url, filepath):
@@ -111,22 +111,21 @@ def main():
         try:
             url = f"{BASE_URL}/b{book_id}/"
             response = retry_request(url, allow_redirects=True)
-            response.raise_for_status()
             check_for_redirect(response)
 
-            base_book_info = parse_book_page(response)
+            parsed_book_dict_data = parse_book_page(response)
 
-            print(f"Название: {base_book_info['title']}")
-            print(f"Автор: {base_book_info['author']}")
-            print(f"Жанр: {base_book_info['genre']}")
-            print(f"Жанр: {base_book_info['image_url']}")
+            print(f"Название: {parsed_book_dict_data['title']}")
+            print(f"Автор: {parsed_book_dict_data['author']}")
+            print(f"Жанр: {parsed_book_dict_data['genre']}")
+            print(f"Жанр: {parsed_book_dict_data['image_url']}")
 
             print("Комментарии:")
-            for comment in base_book_info["comments"]:
+            for comment in parsed_book_dict_data["comments"]:
                 print(f"- {comment}")
 
-            download_book(book_id, base_book_info["title"])
-            download_image(base_book_info['image_url'])
+            download_book(book_id, parsed_book_dict_data["title"])
+            download_image(parsed_book_dict_data['image_url'])
 
         except requests.exceptions.HTTPError as e:
             logging.error(f"HTTPError для книги ID {book_id}: {e}")
