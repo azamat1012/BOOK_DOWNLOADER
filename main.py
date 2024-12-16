@@ -113,19 +113,19 @@ def main():
             response = retry_request(url, allow_redirects=True)
             check_for_redirect(response)
 
-            parsed_book_dict_data = parse_book_page(response)
+            parsed_book = parse_book_page(response)
 
-            print(f"Название: {parsed_book_dict_data['title']}")
-            print(f"Автор: {parsed_book_dict_data['author']}")
-            print(f"Жанр: {parsed_book_dict_data['genre']}")
-            print(f"Жанр: {parsed_book_dict_data['image_url']}")
+            print(f"Название: {parsed_book['title']}")
+            print(f"Автор: {parsed_book['author']}")
+            print(f"Жанр: {parsed_book['genre']}")
+            print(f"Жанр: {parsed_book['image_url']}")
 
             print("Комментарии:")
-            for comment in parsed_book_dict_data["comments"]:
+            for comment in parsed_book["comments"]:
                 print(f"- {comment}")
 
-            download_book(book_id, parsed_book_dict_data["title"])
-            download_image(parsed_book_dict_data['image_url'])
+            download_book(book_id, parsed_book["title"])
+            download_image(parsed_book['image_url'])
 
         except requests.exceptions.HTTPError as e:
             logging.error(f"HTTPError для книги ID {book_id}: {e}")
