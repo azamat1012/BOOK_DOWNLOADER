@@ -49,14 +49,14 @@ def parse_book_page(response):
     soup = BeautifulSoup(response.text, "html.parser")
     comments_divs = soup.find_all("div", class_="texts")
 
-    book_data = {
+    book = {
         "title": soup.find("h1").text.split("::")[0].strip(),
         "author": soup.find("h1").find("a").text.strip(),
         "genre": soup.find("span", class_="d_book").find("a").text.strip(),
         "comments": [div.find("span").text.strip() for div in comments_divs],
         "image_url": urljoin(response.url, soup.select_one("div.bookimage img")["src"]),
     }
-    return book_data
+    return book
 
 
 def download_file(url, filepath):
